@@ -100,6 +100,7 @@ footer{max-width:1180px;margin:0 auto;padding:0 16px 32px;color:var(--sub);font-
   <div class="top">
     <label>案件名<input id="name" value="〇〇様邸 新築工事"></label>
     <label>担当で絞る<select id="whoSel"></select></label>
+    <label>この案件のChatworkルームID（空ならいつものルーム）<input id="caseRoom" inputmode="numeric" placeholder="例: 123456789"></label>
   </div>
   <div class="scroll"><table class="ev" id="evs"></table></div>
   <div class="checks" style="margin-top:10px">
@@ -121,13 +122,15 @@ footer{max-width:1180px;margin:0 auto;padding:0 16px 32px;color:var(--sub);font-
   </div>
   <div class="scroll"><table id="tasks"></table></div>
   <div class="btns noprint" style="margin-top:12px">
-    <button class="pri" onclick="copyWeek()">2週間分を連絡文でコピー</button>
+    <button class="pri" onclick="sendCw()">Chatworkに送る（2週間分）</button>
+    <button class="pri" onclick="sendSheet()">スプレッドシートに書き出す</button>
+    <button onclick="copyWeek()">2週間分を連絡文でコピー</button>
     <button onclick="dlIcs()">カレンダー用ファイルを保存</button>
     <button onclick="dlCsv()">CSVで保存</button>
     <button onclick="window.print()">印刷・PDFにする</button>
   </div>
   <div id="msg"></div>
-  <p class="note">「カレンダー用ファイル」はGoogleカレンダーやOutlookに取り込めます（Googleカレンダー＝設定→インポート）。連絡文はChatworkやLINEにそのまま貼れます。</p>
+  <p class="note">Chatworkとスプレッドシートへの送信は、ページ下の「連携の設定」を済ませると使えます。スプレッドシートには案件ごとに書き出し、同じ案件をもう一度書き出すと置き換わります。「カレンダー用ファイル」はGoogleカレンダーやOutlookに取り込めます（Googleカレンダー＝設定→インポート）。連絡文はChatworkやLINEにそのまま貼れます。</p>
 </section>
 
 <details class="card" id="edbox">
@@ -147,9 +150,11 @@ footer{max-width:1180px;margin:0 auto;padding:0 16px 32px;color:var(--sub);font-
   </div>
   <div id="edMsg"></div>
 </details>
+<details class="card" id="linkbox"></details>
 </main>
 <footer>※見本のルールは一般的な注文住宅の流れを想定した目安です。自社の段取りに合わせて直してから使ってください。入力内容は外部に送信されません。</footer>
 
+<script src="koumu-link.js"></script>
 <script>
 "use strict";
 // ---------- 見本 ----------
@@ -375,17 +380,43 @@ function dlIcs(){
   download(nm+"_やること.ics",L.join("\r\n")+"\r\n","text/calendar");
   flash("カレンダー用ファイルを保存しました。カレンダーの「インポート」から取り込んでください。");
 }
+function weekLines(){
+  const ts=current().filter(t=>!t.done&&diff(t.due,TODAY)<=14);
+  if(!ts.length)return ["期限が2週間以内のやることはありません。"];
+  return ts.map(t=>{const n=diff(t.due,TODAY);return "・"+fmt(t.due)+" "+t.t+"（"+(t.w||"担当未定")+"）"+(n<0?" ※"+(-n)+"日過ぎ":"");});
+}
 function copyWeek(){
   const nm=$("name").value||"案件";
-  const ts=current().filter(t=>!t.done&&diff(t.due,TODAY)<=14);
-  let s="【"+nm+"】今後2週間のやること（"+fmt(TODAY)+"時点）\n";
-  if(!ts.length)s+="期限が2週間以内のやることはありません。\n";
-  ts.forEach(t=>{const n=diff(t.due,TODAY);s+="・"+fmt(t.due)+" "+t.t+"（"+(t.w||"担当未定")+"）"+(n<0?" ※"+(-n)+"日過ぎ":"")+"\n";});
+  const s="【"+nm+"】今後2週間のやること（"+fmt(TODAY)+"時点）\n"+weekLines().join("\n")+"\n";
   const done=()=>flash("連絡文をコピーしました。ChatworkやLINEに貼り付けてください。");
   if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(s).then(done,()=>fallbackCopy(s,done));}else fallbackCopy(s,done);
 }
 function fallbackCopy(s,cb){const ta=document.createElement("textarea");ta.value=s;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");cb();}catch(e){}ta.remove();}
-function flash(m){$("msg").innerHTML='<div class="ok">'+esc(m)+'</div>';setTimeout(()=>{$("msg").innerHTML="";},5000);}
+function flash(m,ng){$("msg").innerHTML='<div class="'+(ng?"warn":"ok")+'">'+esc(m)+'</div>';clearTimeout(flash.t);flash.t=setTimeout(()=>{$("msg").innerHTML="";},ng?10000:6000);}
+function caseRoom(){return KoumuLink.roomId(ST.room)||KoumuLink.cfg().room||"";}
+function busy(b){document.querySelectorAll("#tasks~.btns button, .scroll~.btns button").forEach(x=>x.disabled=b);}
+function needLink(){if(KoumuLink.ready())return false;flash("連携が未設定です。ページ下の「Chatwork・スプレッドシート連携の設定」を開いてください。",1);$("linkbox").open=true;return true;}
+function sendCw(){
+  if(needLink())return;
+  const room=caseRoom();
+  if(!room){flash("ChatworkのルームIDが空です。この案件のルームIDか、連携設定の「いつも送るルームID」を入れてください。",1);return;}
+  const nm=$("name").value||"案件";
+  const body="[info][title]"+nm+"：今後2週間のやること（"+fmt(TODAY)+"時点）[/title]"+weekLines().join("\n")+"[/info]";
+  busy(true);flash("送っています…");
+  KoumuLink.post({chatwork:{room,body}}).then(r=>{busy(false);r.ok?flash("Chatwork（ルーム "+room+"）に送りました。"):flash((r.chatwork&&r.chatwork.error)||r.error||"送れませんでした。",1);},e=>{busy(false);flash(e.message,1);});
+}
+function sendSheet(){
+  if(needLink())return;
+  const nm=$("name").value||"案件",room=caseRoom();
+  const now=new Date(),stamp=ymd(now)+" "+String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+  const rows=build().map(t=>[nm,ymd(t.due),t.t,t.w||"",evName(t.ev)+(t.o===0?"当日":Math.abs(t.o)+"日"+(t.o<0?"前":"後")),t.done?"○":"",room,stamp]);
+  busy(true);flash("書き出しています…");
+  KoumuLink.post({sheet:{name:"やること",caseName:nm,header:["案件","期限","やること","担当","きっかけ","完了","通知先ルーム","書き出し日時"],rows}}).then(r=>{
+    busy(false);
+    if(r.ok&&r.sheet){$("msg").innerHTML='<div class="ok">スプレッドシートの「やること」シートに'+r.sheet.rows+'件書き出しました。 <a href="'+esc(r.sheet.url)+'" target="_blank" rel="noopener">シートを開く</a></div>';}
+    else flash((r.sheet&&r.sheet.error)||r.error||"書き出せませんでした。",1);
+  },e=>{busy(false);flash(e.message,1);});
+}
 
 // ---------- CSV読み込み ----------
 function dlRules(){
@@ -425,6 +456,9 @@ $("seg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)r
 $("whoSel").addEventListener("change",e=>{ST.who=e.target.value;save();render();});
 ["shift","satOff"].forEach(id=>$(id).addEventListener("change",render));
 $("name").value=ST.name||$("name").value;
+$("caseRoom").value=ST.room||"";
+$("caseRoom").addEventListener("change",e=>{ST.room=KoumuLink.roomId(e.target.value);e.target.value=ST.room;save();});
+KoumuLink.mount($("linkbox"));
 $("name").addEventListener("input",e=>{ST.name=e.target.value;save();});
 renderWho();renderEd();render();
 </script>
