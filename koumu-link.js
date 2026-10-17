@@ -32,7 +32,7 @@
       '<li>ルームID（ChatworkのURLの <code>#!rid</code> の後ろの数字）を入れて「接続テスト」</li>' +
       '<li>毎朝の通知を使うときは、Apps Script で <code>毎朝の通知を設定する</code> を1回実行（期限が7日以内・過ぎた未完了のやることを、毎朝8時台に案件ごとのルームへ送ります）</li>' +
       '</ol>' +
-      '<div class="btns"><button type="button" id="klCopy">コードをコピー</button><a href="apps-script.gs" target="_blank" rel="noopener" style="align-self:center;font-size:14px">コードを開く</a></div>' +
+      '<div class="btns"><button type="button" id="klCopy">コードをコピー</button><a href="apps-script.txt" target="_blank" rel="noopener" style="align-self:center;font-size:14px">コードを開く</a></div>' +
       '<div class="kl-grid">' +
       '<label>連携用URL（ウェブアプリのURL）<input id="klUrl" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(c.url) + '"></label>' +
       '<label>合言葉（SECRET と同じもの）<input id="klSecret" type="password" autocomplete="off" value="' + esc(c.secret) + '"></label>' +
@@ -55,7 +55,7 @@
     });
     $("klClear").addEventListener("click", function () { store({}); $("klUrl").value = ""; $("klSecret").value = ""; $("klRoom").value = ""; msg("設定を消しました。", true); upd(); });
     $("klCopy").addEventListener("click", function () {
-      fetch("apps-script.gs", { cache: "no-store" }).then(function (r) { return r.text(); }).then(function (t) { return copyText(t); })
+      fetch("apps-script.txt", { cache: "no-store" }).then(function (r) { return r.text(); }).then(function (t) { return copyText(t); })
         .then(function () { msg("Apps Script のコードをコピーしました。Apps Script の画面に貼り付けてください。", true); })
         .catch(function () { msg("コピーできませんでした。「コードを開く」から全体を選んでコピーしてください。", false); });
     });
